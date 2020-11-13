@@ -71,7 +71,7 @@ if args.cuda:
     idx_val = idx_val.cuda()
     idx_test = idx_test.cuda()
 
-features, adj, labels = Variable(features), Variable(adj), Variable(labels)
+features, adj, labels = Variable(features), Variable(adj), Variable(labels)  # requires_grad = True，新版本使用这个设置Tensor可求梯度
 
 
 def train(epoch):
@@ -115,12 +115,12 @@ def compute_test():
 t_total = time.time()
 loss_values = []
 bad_counter = 0
-best = args.epochs + 1
+best = args.epochs + 1  # best值应该是预设的精度
 best_epoch = 0
 for epoch in range(args.epochs):
-    loss_values.append(train(epoch))
+    loss_values.append(train(epoch))  # 存储每一轮的训练损失
 
-    torch.save(model.state_dict(), '{}.pkl'.format(epoch))
+    torch.save(model.state_dict(), '{}.pkl'.format(epoch))  # 存储每一轮的训练模型
     if loss_values[-1] < best:
         best = loss_values[-1]
         best_epoch = epoch
@@ -128,14 +128,14 @@ for epoch in range(args.epochs):
     else:
         bad_counter += 1
 
-    if bad_counter == args.patience:
+    if bad_counter == args.patience:  # 超过坏轮次阈值则中断训练
         break
 
     files = glob.glob('*.pkl')
     for file in files:
         epoch_nb = int(file.split('.')[0])
         if epoch_nb < best_epoch:
-            os.remove(file)
+            os.remove(file)  # 只保留训练精度最好的模型
 
 files = glob.glob('*.pkl')
 for file in files:

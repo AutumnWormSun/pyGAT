@@ -24,15 +24,17 @@ class GraphAttentionLayer(nn.Module):
         self.leakyrelu = nn.LeakyReLU(self.alpha)
 
     def forward(self, h, adj):
-        Wh = torch.mm(h, self.W) # h.shape: (N, in_features), Wh.shape: (N, out_features)
-        a_input = self._prepare_attentional_mechanism_input(Wh)
-        e = self.leakyrelu(torch.matmul(a_input, self.a).squeeze(2))
+        Wh = torch.mm(h, self.W)  # h.shape: (N, in_features), Wh.shape: (N, out_features) 节点数量，输入特征长度；节点数量，输出特征长度
+        a_input = self._prepare_attentional_mechanism_input(Wh)  # a(.)映射的输入矩阵，大小为(N, N, 2*out_features)
+        e = self.leakyrelu(torch.matmul(a_input, self.a).squeeze(2))  # eij为相关系数（注意力得分），后面还要做规范化计算，大小为(N, N, N).sequeeze(2)
 
         zero_vec = -9e15*torch.ones_like(e)
+        # masked-attention是利用邻接矩阵来实现的，attention矩阵和adj矩阵大小相同，
+        # 将adj矩阵中非零元素替换为eij，这个操作只对和节点i相邻的节点j有效
         attention = torch.where(adj > 0, e, zero_vec)
-        attention = F.softmax(attention, dim=1)
+        attention = F.softmax(attention, dim=1)  # 按行对注意力权重矩阵做softmax操作
         attention = F.dropout(attention, self.dropout, training=self.training)
-        h_prime = torch.matmul(attention, Wh)
+        h_prime = torch.matmul(attention, Wh)  # 注意力权重和隐层表达做加权求和
 
         if self.concat:
             return F.elu(h_prime)
@@ -44,17 +46,20 @@ class GraphAttentionLayer(nn.Module):
 
         # Below, two matrices are created that contain embeddings in their rows in different orders.
         # (e stands for embedding)
-        # These are the rows of the first matrix (Wh_repeated_in_chunks): 
+        # These are the rows of the first matrix (Wh_repeated_in_chunks):
         # e1, e1, ..., e1,            e2, e2, ..., e2,            ..., eN, eN, ..., eN
         # '-------------' -> N times  '-------------' -> N times       '-------------' -> N times
         # 
         # These are the rows of the second matrix (Wh_repeated_alternating): 
         # e1, e2, ..., eN, e1, e2, ..., eN, ..., e1, e2, ..., eN 
         # '----------------------------------------------------' -> N times
-        # 
         
-        Wh_repeated_in_chunks = Wh.repeat_interleave(N, dim=0)
-        Wh_repeated_alternating = Wh.repeat(N, 1)
+        # 沿行方向重复每个元素N次，每行最终包含元素个数不变，
+        # 但是列的数量变为N*N，即Wh的输出大小为(N*N, out_features)
+        Wh_repeated_in_chunks = Wh.repeat_interleave(N, dim=0)  # Whi
+        # 沿行方向重复每行元素N次，每行最终包含元素个数不变，
+        # 但是列的数量变为N*N，即Wh的输出大小为(N*N, out_features)
+        Wh_repeated_alternating = Wh.repeat(N, 1)  # Whj
         # Wh_repeated_in_chunks.shape == Wh_repeated_alternating.shape == (N * N, out_features)
 
         # The all_combination_matrix, created below, will look like this (|| denotes concatenation):
@@ -75,10 +80,10 @@ class GraphAttentionLayer(nn.Module):
         # ...
         # eN || eN
 
-        all_combinations_matrix = torch.cat([Wh_repeated_in_chunks, Wh_repeated_alternating], dim=1)
+        all_combinations_matrix = torch.cat([Wh_repeated_in_chunks, Wh_repeated_alternating], dim=1)  # 实际在求Whi||Whj隐层表达
         # all_combinations_matrix.shape == (N * N, 2 * out_features)
 
-        return all_combinations_matrix.view(N, N, 2 * self.out_features)
+        return all_combinations_matrix.view(N, N, 2 * self.out_features)  # [N, :, :]存储了每一个节点i与邻居j的Whi||Whj隐层表达
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
